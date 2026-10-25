@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Catch the milk tea 🧋</title>
+<style>
+:root{--bg:#fbe9e0;--ink:#3b2418;--card:#fff7f2;--accent:#b5532f;--accent-ink:#fff;--muted:#7a5a4a;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#2a1a14;--ink:#f8e6dc;--card:#3a251c;--accent:#e08a5f;--accent-ink:#2a1a14;--muted:#c9a692}}
+:root[data-theme="dark"]{--bg:#2a1a14;--ink:#f8e6dc;--card:#3a251c;--accent:#e08a5f;--accent-ink:#2a1a14;--muted:#c9a692}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:"Fredoka","Trebuchet MS",system-ui,sans-serif;display:flex;justify-content:center;align-items:center;overscroll-behavior:none}
+#app{position:relative;width:100%;max-width:420px;height:100%;max-height:760px;display:flex;flex-direction:column}
+#hud{display:flex;justify-content:space-between;padding:12px 16px;font-size:20px;font-weight:600}
+canvas{flex:1;width:100%;touch-action:none;display:block}
+.screen{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:28px;background:var(--bg);gap:14px}
+.screen.on{display:flex}
+h1{font-size:34px;line-height:1.15;margin:0}
+p{margin:0;font-size:18px;line-height:1.45;max-width:30ch;color:var(--muted)}
+.big{font-size:72px;line-height:1}
+button,a.btn{font:inherit;font-weight:600;font-size:18px;border:2px solid var(--accent);background:var(--accent);color:var(--accent-ink);padding:12px 26px;border-radius:999px;cursor:pointer;text-decoration:none;min-width:200px}
+button.ghost{background:transparent;color:var(--accent)}
+button:focus-visible,a.btn:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud"><span>🧋 <b id="sc">0</b> / <span id="goal"></span></span><span id="lv">❤️❤️❤️</span></div>
+  <canvas id="c"></canvas>
+
+  <div class="screen on" id="start">
+    <div class="big">🧋</div>
+    <h1 id="hi"></h1>
+    <p>I made you a tiny game, just for fun 💕 Catch the milk teas, dodge the broccoli, and drag to move. Ready? 🧋</p>
+    <button id="play">Play</button>
+  </div>
+
+  <div class="screen" id="lose">
+    <div class="big">🥦</div>
+    <h1>So close!</h1>
+    <p>The broccoli got you. Try again.</p>
+    <button id="again">Try again</button>
+  </div>
+
+  <div class="screen" id="win">
+    <div class="big">🏆</div>
+    <h1>You win a free milk tea (with me 😄)</h1>
+    <p id="ask"></p>
+    <button id="yes">Yes, let’s go</button>
+    <button class="ghost" id="later">Maybe later</button>
+  </div>
+
+  <div class="screen" id="yay">
+    <div class="big">🎉</div>
+    <h1>It’s a date!</h1>
+    <p id="yaytxt"></p>
+    <a class="btn" id="contact" style="display:none" target="_blank" rel="noopener">Message me</a>
+  </div>
+
+  <div class="screen" id="nah">
+    <div class="big">🙂</div>
+    <h1>No worries!</h1>
+    <p>Thanks for playing. Hope I made you smile.</p>
+    <button class="ghost" id="replay">Play again</button>
+  </div>
+</div>
+
+<script>
+// ✏️ EDIT THESE
+const HER_NAME = "Lex";            // her name
+const MY_NAME = "Lennox";            // your name
+const CONTACT_URL = "";             // e.g. your Messenger/IG link. Leave "" to show a screenshot message instead
+const GOAL = 12;                    // milk teas to catch
+
+const $ = id => document.getElementById(id);
+const cv = $("c"), ctx = cv.getContext("2d");
+let W, H, dpr, px, items, score, lives, running, last, spawn, t0;
+
+$("hi").textContent = "Hi " + HER_NAME + "! 🌸✨";
+$("goal").textContent = GOAL;
+$("ask").textContent = "Catch me for real? Coffee or milk tea this week. It’s " + MY_NAME + ", by the way.";
+$("yaytxt").textContent = CONTACT_URL ? "Send me a message and we’ll pick a day." : "Screenshot this and send it to " + MY_NAME + " so we can pick a day.";
+if (CONTACT_URL) { $("contact").href = CONTACT_URL; $("contact").style.display = ""; }
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  const r = cv.getBoundingClientRect();
+  W = r.width; H = r.height;
+  cv.width = W * dpr; cv.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  px = Math.min(Math.max(px ?? W / 2, 30), W - 30);
+}
+addEventListener("resize", resize);
+
+function show(id) {
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("on"));
+  if (id) $(id).classList.add("on");
+}
+
+function start() {
+  resize();
+  items = []; score = 0; lives = 3; spawn = 0; px = W / 2;
+  hud(); running = true; last = performance.now(); t0 = last;
+  show(null);
+  requestAnimationFrame(loop);
+}
+
+function hud() {
+  $("sc").textContent = score;
+  $("lv").textContent = "❤️".repeat(lives) + "🖤".repeat(3 - lives);
+}
+
+function loop(now) {
+  if (!running) return;
+  const dt = Math.min((now - last) / 1000, 0.05); last = now;
+  const elapsed = (now - t0) / 1000;
+  spawn -= dt;
+  if (spawn <= 0) {
+    spawn = Math.max(0.38, 0.82 - elapsed * 0.013);
+    const bad = Math.random() < 0.35;
+    items.push({ x: 24 + Math.random() * (W - 48), y: -30, v: 165 + elapsed * 4.5 + Math.random() * 75, bad });
+  }
+  ctx.clearRect(0, 0, W, H);
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  const catchY = H - 56;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    it.y += it.v * dt;
+    ctx.font = "36px serif";
+    ctx.fillText(it.bad ? "🥦" : "🧋", it.x, it.y);
+    if (it.y > catchY - 22 && it.y < catchY + 22 && Math.abs(it.x - px) < 34) {
+      items.splice(i, 1);
+      if (it.bad) { lives--; if (navigator.vibrate) navigator.vibrate(60); }
+      else score++;
+      hud();
+      if (score >= GOAL) return end("win");
+      if (lives <= 0) return end("lose");
+    } else if (it.y > H + 30) items.splice(i, 1);
+  }
+  ctx.font = "52px serif";
+  ctx.fillText("🧺", px, catchY);
+  requestAnimationFrame(loop);
+}
+
+function end(screen) { running = false; show(screen); }
+
+function move(e) {
+  const r = cv.getBoundingClientRect();
+  px = Math.min(Math.max(e.clientX - r.left, 30), W - 30);
+}
+cv.addEventListener("pointerdown", move);
+cv.addEventListener("pointermove", move);
+addEventListener("keydown", e => {
+  if (e.key === "ArrowLeft") px = Math.max(30, px - 30);
+  if (e.key === "ArrowRight") px = Math.min(W - 30, px + 30);
+});
+
+$("play").onclick = start;
+$("again").onclick = start;
+$("replay").onclick = start;
+$("yes").onclick = () => show("yay");
+$("later").onclick = () => show("nah");
+</script>
+</body>
+</html>
